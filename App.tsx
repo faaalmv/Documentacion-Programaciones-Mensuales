@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { initialData, SHEET_NAMES } from './constants';
-import type { AppData } from './types';
+import type { AppData, ItemRow, SheetData, SheetRow } from './types';
 
 const AppStyles = () => (
   <style>{`
@@ -109,7 +109,7 @@ const AppStyles = () => (
     }
     .codigo-col { width: 110px; }
     .descripcion-col { width: 320px; }
-    .data-table .descripcion-col { text-align: left; white-space: normal; }
+    .data-table th.descripcion-col, .data-table td.descripcion-col { text-align: left; white-space: normal; }
     .unidad-col { width: 80px; }
     .dia-col { width: 50px; }
     .total-col { width: 80px; font-weight: bold; }
@@ -141,6 +141,9 @@ const AppStyles = () => (
       padding: 0;
       margin: 0;
     }
+    .data-table .number-input:disabled {
+      color: var(--text-color);
+    }
     .data-table .number-input::-webkit-outer-spin-button,
     .data-table .number-input::-webkit-inner-spin-button {
       -webkit-appearance: none;
@@ -162,8 +165,54 @@ const AppStyles = () => (
   `}</style>
 );
 
+const calculateGeneralSummary = (currentData: AppData): SheetData => {
+    const itemMap = new Map<string, ItemRow>();
+
+    // Sum values from all sheets except GENERAL
+    for (const sheetName of SHEET_NAMES) {
+        if (sheetName === 'GENERAL') continue;
+        for (const row of currentData[sheetName]) {
+            if (row.type === 'item') {
+                const summaryItem = itemMap.get(row.codigo);
+                if (summaryItem) {
+                    const newDias = summaryItem.dias.map((d, i) => d + (row.dias[i] || 0));
+                    itemMap.set(row.codigo, { ...summaryItem, dias: newDias });
+                } else {
+                    itemMap.set(row.codigo, { ...row, dias: [...row.dias] });
+                }
+            }
+        }
+    }
+
+    // Rebuild the GENERAL sheet using its original structure from initialData
+    const generalTemplate = initialData['GENERAL'];
+    const newGeneralSheet: SheetData = generalTemplate.map(row => {
+        if (row.type === 'item') {
+            const summedItem = itemMap.get(row.codigo);
+            if (summedItem) {
+                // Update days from the summed map, but keep original structure
+                return { ...row, dias: summedItem.dias };
+            }
+            // Item from template not found in other sheets, show with zeros
+            return { ...row, dias: Array(31).fill(0) };
+        }
+        return row; // Keep group headers
+    });
+
+    return newGeneralSheet;
+};
+
+const getInitialState = (): AppData => {
+    const summary = calculateGeneralSummary(initialData);
+    return {
+        ...initialData,
+        'GENERAL': summary,
+    };
+};
+
+
 const App: React.FC = () => {
-  const [data, setData] = useState<AppData>(initialData);
+  const [data, setData] = useState<AppData>(getInitialState);
   const [activeSheet, setActiveSheet] = useState<string>(SHEET_NAMES[0]);
   const [lastUpdated, setLastUpdated] = useState<{itemId: number, dayIndex: number} | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -176,6 +225,7 @@ const App: React.FC = () => {
   }, [lastUpdated]);
 
   useEffect(() => {
+    // When switching sheets, expand all groups by default
     const currentSheetData = data[activeSheet] || [];
     const allGroupDescriptions = new Set<string>();
     currentSheetData.forEach(row => {
@@ -184,15 +234,17 @@ const App: React.FC = () => {
       }
     });
     setExpandedGroups(allGroupDescriptions);
-  }, [activeSheet]);
+  }, [activeSheet, data]);
 
   const handleValueChange = useCallback((itemId: number, dayIndex: number, value: string) => {
+    if (activeSheet === 'GENERAL') return; // Prevent editing the GENERAL tab
+
     const numericValue = parseInt(value, 10);
     if (isNaN(numericValue) && value !== '') return;
 
     setData(prevData => {
-      const currentSheetData = prevData[activeSheet];
-      const newSheetData = currentSheetData.map(row => {
+      // Update the active sheet's data
+      const newSheetData = prevData[activeSheet].map(row => {
         if (row.type === 'item' && row.id === itemId) {
           const newDias = [...row.dias];
           newDias[dayIndex] = isNaN(numericValue) ? 0 : numericValue;
@@ -201,9 +253,17 @@ const App: React.FC = () => {
         return row;
       });
 
-      return {
+      const newData = {
         ...prevData,
         [activeSheet]: newSheetData,
+      };
+
+      // Recalculate the GENERAL summary tab based on the new data
+      const summary = calculateGeneralSummary(newData);
+
+      return {
+        ...newData,
+        'GENERAL': summary,
       };
     });
     setLastUpdated({ itemId, dayIndex });
@@ -307,6 +367,7 @@ const App: React.FC = () => {
                                 onChange={(e) => handleValueChange(row.id, dayIndex, e.target.value)}
                                 onFocus={(e) => e.target.select()}
                                 aria-label={`Value for ${row.descripcion} on day ${dayIndex + 1}`}
+                                disabled={activeSheet === 'GENERAL'}
                               />
                             </td>
                           ))}
