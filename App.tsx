@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { initialData, SHEET_NAMES } from './constants';
 import type { AppData } from './types';
@@ -107,7 +108,8 @@ const AppStyles = () => (
         z-index: 15;
     }
     .codigo-col { width: 110px; }
-    .descripcion-col { width: 320px; text-align: left; white-space: normal; }
+    .descripcion-col { width: 320px; }
+    .data-table .descripcion-col { text-align: left; white-space: normal; }
     .unidad-col { width: 80px; }
     .dia-col { width: 50px; }
     .total-col { width: 80px; font-weight: bold; }
@@ -115,7 +117,10 @@ const AppStyles = () => (
     .sticky-col-1 { left: 0; }
     .sticky-col-2 { left: 110px; }
     .sticky-col-3 { left: 430px; }
-
+    
+    .data-table .group-header-row:hover {
+        background-color: var(--row-hover-bg-color);
+    }
     .data-table .group-header-row td {
       background-color: var(--group-header-bg-color);
       font-weight: bold;
@@ -123,6 +128,7 @@ const AppStyles = () => (
       border-left: 5px solid var(--header-bg-color);
       position: sticky;
       top: 0;
+      user-select: none;
     }
     .data-table .number-input {
       width: 100%;
@@ -160,6 +166,7 @@ const App: React.FC = () => {
   const [data, setData] = useState<AppData>(initialData);
   const [activeSheet, setActiveSheet] = useState<string>(SHEET_NAMES[0]);
   const [lastUpdated, setLastUpdated] = useState<{itemId: number, dayIndex: number} | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (lastUpdated) {
@@ -167,6 +174,17 @@ const App: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [lastUpdated]);
+
+  useEffect(() => {
+    const currentSheetData = data[activeSheet] || [];
+    const allGroupDescriptions = new Set<string>();
+    currentSheetData.forEach(row => {
+      if (row.type === 'groupHeader') {
+        allGroupDescriptions.add(row.descripcion);
+      }
+    });
+    setExpandedGroups(allGroupDescriptions);
+  }, [activeSheet]);
 
   const handleValueChange = useCallback((itemId: number, dayIndex: number, value: string) => {
     const numericValue = parseInt(value, 10);
@@ -190,6 +208,25 @@ const App: React.FC = () => {
     });
     setLastUpdated({ itemId, dayIndex });
   }, [activeSheet]);
+
+  const toggleGroup = useCallback((groupDescription: string) => {
+    setExpandedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupDescription)) {
+        newSet.delete(groupDescription);
+      } else {
+        newSet.add(groupDescription);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const handleGroupKeyDown = useCallback((event: React.KeyboardEvent, groupDescription: string) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleGroup(groupDescription);
+    }
+  }, [toggleGroup]);
   
   const currentSheetData = data[activeSheet] || [];
   const dayHeaders = Array.from({ length: 31 }, (_, i) => i + 1);
@@ -224,41 +261,62 @@ const App: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {currentSheetData.map((row, rowIndex) => {
-                if (row.type === 'groupHeader') {
-                  return (
-                    <tr key={`group-${rowIndex}`} className="group-header-row">
-                      <td colSpan={35}>{row.descripcion}</td>
-                    </tr>
-                  );
-                }
-                
-                if (row.type === 'item') {
-                  const total = row.dias.reduce((sum, val) => sum + (val || 0), 0);
-                  const isUpdatedRow = lastUpdated?.itemId === row.id;
-                  return (
-                    <tr key={row.id}>
-                      <td className="codigo-col sticky-col sticky-col-1">{row.codigo}</td>
-                      <td className="descripcion-col sticky-col sticky-col-2">{row.descripcion}</td>
-                      <td className="unidad-col sticky-col sticky-col-3">{row.unidad}</td>
-                      {row.dias.map((value, dayIndex) => (
-                        <td key={dayIndex} className={`dia-col ${isUpdatedRow && lastUpdated.dayIndex === dayIndex ? 'highlight' : ''}`}>
-                          <input
-                            type="number"
-                            className="number-input"
-                            value={value}
-                            onChange={(e) => handleValueChange(row.id, dayIndex, e.target.value)}
-                            onFocus={(e) => e.target.select()}
-                            aria-label={`Value for ${row.descripcion} on day ${dayIndex + 1}`}
-                          />
-                        </td>
-                      ))}
-                      <td className={`total-col ${isUpdatedRow ? 'highlight' : ''}`}>{total}</td>
-                    </tr>
-                  );
-                }
-                return null;
-              })}
+              {(() => {
+                  let currentGroupIsExpanded = false;
+                  return currentSheetData.map((row, rowIndex) => {
+                    if (row.type === 'groupHeader') {
+                      const isExpanded = expandedGroups.has(row.descripcion);
+                      currentGroupIsExpanded = isExpanded;
+                      return (
+                        <tr
+                          key={`group-${rowIndex}`}
+                          className="group-header-row"
+                          onClick={() => toggleGroup(row.descripcion)}
+                          onKeyDown={(e) => handleGroupKeyDown(e, row.descripcion)}
+                          style={{ cursor: 'pointer' }}
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={isExpanded}
+                        >
+                          <td colSpan={35}>
+                            <span style={{ display: 'inline-block', width: '20px' }}>
+                              {isExpanded ? '▼' : '►'}
+                            </span>
+                            {row.descripcion}
+                          </td>
+                        </tr>
+                      );
+                    }
+                    
+                    if (row.type === 'item') {
+                      if (!currentGroupIsExpanded) return null;
+
+                      const total = row.dias.reduce((sum, val) => sum + (val || 0), 0);
+                      const isUpdatedRow = lastUpdated?.itemId === row.id;
+                      return (
+                        <tr key={row.id}>
+                          <td className="codigo-col sticky-col sticky-col-1">{row.codigo}</td>
+                          <td className="descripcion-col sticky-col sticky-col-2">{row.descripcion}</td>
+                          <td className="unidad-col sticky-col sticky-col-3">{row.unidad}</td>
+                          {row.dias.map((value, dayIndex) => (
+                            <td key={dayIndex} className={`dia-col ${isUpdatedRow && lastUpdated.dayIndex === dayIndex ? 'highlight' : ''}`}>
+                              <input
+                                type="number"
+                                className="number-input"
+                                value={value}
+                                onChange={(e) => handleValueChange(row.id, dayIndex, e.target.value)}
+                                onFocus={(e) => e.target.select()}
+                                aria-label={`Value for ${row.descripcion} on day ${dayIndex + 1}`}
+                              />
+                            </td>
+                          ))}
+                          <td className={`total-col ${isUpdatedRow ? 'highlight' : ''}`}>{total}</td>
+                        </tr>
+                      );
+                    }
+                    return null;
+                  })
+              })()}
             </tbody>
           </table>
         </div>
