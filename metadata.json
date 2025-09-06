@@ -1,0 +1,5 @@
+{
+  "name": "Planning Spreadsheet Prototype",
+  "description": "An interactive spreadsheet prototype for planning supplies, built with React. It allows editing daily values and automatically recalculates totals in real-time across multiple sheets.",
+  "requestFramePermissions": []
+}
