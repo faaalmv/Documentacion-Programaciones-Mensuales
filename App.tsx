@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { initialData, SHEET_NAMES } from './constants';
 import type { AppData, ItemRow, SheetData, SheetRow } from './types';
@@ -152,11 +153,9 @@ const AppStyles = () => (
       transition: background-color var(--transition-fast);
     }
     .data-table th {
-      background-color: rgba(255, 255, 255, 0.8);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
+      background-color: var(--neutral-100);
       color: var(--text-secondary);
-      font-weight: 600;
+      font-weight: 700;
       text-transform: uppercase;
       font-size: 0.75rem;
       letter-spacing: 0.05em;
@@ -168,10 +167,6 @@ const AppStyles = () => (
     
     .data-table tbody tr:not(.group-header-row):hover {
         background-color: var(--row-hover-bg);
-    }
-
-    .data-table tbody tr:not(.group-header-row) {
-        background-color: var(--row-bg-subtle);
     }
 
     .sticky-col {
@@ -465,8 +460,7 @@ const App: React.FC = () => {
                     style={{
                         '--group-bg-color': colors.main,
                         '--group-text-color': colors.text,
-                        '--row-bg-subtle': colors.subtle,
-                        '--row-hover-bg': colors.hover,
+                        '--row-hover-bg': 'var(--neutral-100)',
                     } as React.CSSProperties}
                 >
                   <tr
