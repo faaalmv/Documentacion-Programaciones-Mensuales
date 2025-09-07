@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { initialData, SHEET_NAMES } from './constants';
 import type { AppData, ItemRow, SheetData, SheetRow } from './types';
@@ -125,6 +124,45 @@ const AppStyles = () => (
     .tabs button.active {
       font-weight: 700;
     }
+    
+    .toolbar {
+      margin-bottom: 1.5rem;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .search-container {
+      position: relative;
+      width: 320px;
+    }
+    .search-container .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-secondary);
+      pointer-events: none;
+      width: 1rem;
+      height: 1rem;
+    }
+    .search-input {
+      width: 100%;
+      padding: 0.5rem 0.75rem 0.5rem 2.5rem; /* left padding for icon */
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-md);
+      font-size: 0.9rem;
+      transition: all var(--transition-fast);
+      background-color: var(--bg-container);
+      color: var(--text-primary);
+    }
+    .search-input::placeholder {
+        color: var(--text-secondary);
+        opacity: 0.8;
+    }
+    .search-input:focus {
+      outline: none;
+      border-color: var(--primary-500);
+      box-shadow: 0 0 0 3px var(--focus-ring-color);
+    }
 
     .table-container {
       overflow-x: auto;
@@ -165,6 +203,10 @@ const AppStyles = () => (
       border-bottom: 2px solid var(--border-color);
     }
     
+    .data-table tbody tr:not(.group-header-row) {
+        background-color: var(--bg-container);
+    }
+
     .data-table tbody tr:not(.group-header-row):hover {
         background-color: var(--row-hover-bg);
     }
@@ -196,6 +238,11 @@ const AppStyles = () => (
     .dia-col { width: 50px; }
     .total-col { width: 80px; font-weight: bold; }
     
+    .data-table .dia-col,
+    .data-table .total-col {
+      border-left: 1px solid var(--border-color);
+    }
+
     .data-table .group-header-row {
         user-select: none;
         cursor: pointer;
@@ -213,7 +260,6 @@ const AppStyles = () => (
       z-index: 8;
       transition: background-color var(--transition-fast), opacity var(--transition-fast);
       border-bottom: 1px solid var(--border-color);
-      border-top: 1px solid var(--border-color);
     }
      .data-table .group-header-row .chevron-icon {
         display: inline-block;
@@ -307,6 +353,7 @@ const App: React.FC = () => {
   const [isSwitching, setIsSwitching] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<{itemId: number, dayIndex: number} | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [filterText, setFilterText] = useState('');
 
   const groupColors = useMemo(() => {
     const allDescriptions = new Set<string>();
@@ -397,7 +444,7 @@ const App: React.FC = () => {
   const dayHeaders = Array.from({ length: 31 }, (_, i) => i + 1);
 
   const groupedData = useMemo(() => {
-    const groups: { header: SheetRow, items: ItemRow[] }[] = [];
+    let groups: { header: SheetRow, items: ItemRow[] }[] = [];
     let currentGroupItems: ItemRow[] = [];
 
     currentSheetData.forEach(row => {
@@ -412,8 +459,21 @@ const App: React.FC = () => {
             currentGroupItems.push(row);
         }
     });
-    return groups;
-  }, [currentSheetData]);
+
+    if (!filterText) {
+      return groups;
+    }
+
+    const lowercasedFilter = filterText.toLowerCase();
+    return groups.map(group => {
+      const filteredItems = group.items.filter(item => 
+        item.descripcion.toLowerCase().includes(lowercasedFilter) ||
+        item.codigo.toLowerCase().includes(lowercasedFilter)
+      );
+      return { ...group, items: filteredItems };
+    }).filter(group => group.items.length > 0);
+
+  }, [currentSheetData, filterText]);
 
 
   return (
@@ -440,6 +500,22 @@ const App: React.FC = () => {
             )
           })}
         </div>
+
+        <div className="toolbar">
+            <div className="search-container">
+                 <svg className="search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Filtrar por código o descripción..."
+                    value={filterText}
+                    onChange={(e) => setFilterText(e.target.value)}
+                />
+            </div>
+        </div>
+
         <div className={`table-container ${isSwitching ? 'switching' : ''}`}>
             <table className="data-table">
             <thead>
@@ -476,35 +552,35 @@ const App: React.FC = () => {
                       {header.descripcion}
                     </td>
                   </tr>
-                  {isExpanded && items.map(row => {
+                  {isExpanded && items.map((row: ItemRow) => {
                     const total = row.dias.reduce((sum, val) => sum + (val || 0), 0);
-                    const isUpdatedRow = lastUpdated?.itemId === row.id;
+                    const isTotalFlash = lastUpdated?.itemId === row.id;
                     return (
-                      <tr key={row.id}>
+                        <tr key={row.id}>
                         <td className="codigo-col sticky-col sticky-col-1">{row.codigo}</td>
                         <td className="descripcion-col sticky-col sticky-col-2">{row.descripcion}</td>
                         <td className="unidad-col sticky-col sticky-col-3">{row.unidad}</td>
-                        {row.dias.map((value, dayIndex) => (
-                          <td key={dayIndex} className={`dia-col ${isUpdatedRow && lastUpdated.dayIndex === dayIndex ? 'highlight' : ''}`}>
+                        {row.dias.map((dia, i) => (
+                            <td key={i} className={`dia-col ${lastUpdated?.itemId === row.id && lastUpdated?.dayIndex === i ? 'highlight' : ''}`}>
                             <input
-                              type="number"
-                              className="number-input"
-                              value={value}
-                              onChange={(e) => handleValueChange(row.id, dayIndex, e.target.value)}
-                              onFocus={(e) => e.target.select()}
-                              aria-label={`Value for ${row.descripcion} on day ${dayIndex + 1}`}
-                              disabled={activeSheet === 'GENERAL'}
+                                type="number"
+                                value={dia === 0 ? '' : dia}
+                                onChange={(e) => handleValueChange(row.id, i, e.target.value)}
+                                onFocus={(e) => e.target.select()}
+                                disabled={activeSheet === 'GENERAL'}
+                                className="number-input"
+                                aria-label={`Día ${i + 1} para ${row.descripcion}`}
                             />
-                          </td>
+                            </td>
                         ))}
-                        <td className={`total-col ${isUpdatedRow ? 'total-flash' : ''}`}>{total}</td>
-                      </tr>
-                    );
+                        <td className={`total-col ${isTotalFlash ? 'total-flash' : ''}`}>{total}</td>
+                        </tr>
+                    )
                   })}
                 </tbody>
               );
             })}
-          </table>
+            </table>
         </div>
       </div>
     </>
